@@ -1,0 +1,151 @@
+{%- set vol_strings = ["vol", "volno", "volume"] %}
+{%- set number_strings = ["no", "nos", "number", "numbers", "iss", "issue"] %}
+{%- set three_letter_months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'] %}
+{%- set full_month_names = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'] %}
+{%- set month_names = three_letter_months + full_month_names %}
+{%- set common_word_endings = ["-", ".", ",", ":"] %}
+{%- set range_separators = ["-", ":", "to"] %}
+VOLUME:
+  input:
+    type: single
+    index: end
+  output:
+    type: single
+    index: volume
+    handler: convert_roman_nums
+  patterns:
+    - - LOWER:
+          IN: {{vol_strings}}
+      - TEXT:
+          IN: {{common_word_endings}}
+        OP: "?"
+      - IS_DIGIT: true
+    - - LOWER:
+          IN: {{vol_strings}}
+      - TEXT:
+          IN: {{common_word_endings}}
+        OP: "?"
+      - LOWER:
+          REGEX: ^[mclxvi]+$
+YEAR:
+  input:
+    type: all
+  output:
+    type: single
+    index: year
+    is_int: true
+  patterns:
+    - - IS_DIGIT: true
+        LENGTH: 4
+YEAR_MONTH:
+  input:
+    type: all
+  output:
+    type: multi
+    outputs:
+      - type: single
+        index: year
+        handler: date
+        args:
+          format: "%Y"
+      - type: single
+        index: month
+        handler: date
+        args:
+          format: "%B"
+  patterns:
+    - - IS_DIGIT: true
+        LENGTH: 4
+      - TEXT:
+          IN: ["-", ":"]
+        OP: "?"
+      - IS_DIGIT: true
+MONTH_RANGE:
+  input:
+    type: distinct
+    indexes:
+      - start
+      - end
+  output:
+    type: single
+    index: month
+    handler: joiner
+    args:
+      separator: "-"
+      outputs:
+        - type: single
+          handler: date
+          args:
+            format: "%B"
+        - type: single
+          handler: date
+          args:
+            format: "%B"
+  patterns:
+    - - LOWER:
+          IN: {{month_names}}
+      - LOWER:
+          IN: {{range_separators}}
+        OP: "?"
+      - LOWER: 
+          IN: {{month_names}}
+MONTH:
+  input:
+    type: all
+  output:
+    type: single
+    index: month
+    handler: date
+    args:
+      format: "%B"
+  patterns:
+    - - LOWER:
+          IN: {{month_names}}
+NUMBER_RANGE:
+  input:
+    type: multi
+    start: 1
+    end: end
+  output:
+    type: single
+    index: number
+    handler: joiner
+    args:
+      separator: "-"
+      exclusions: {{common_word_endings}}
+  patterns:
+    - - LOWER:
+          IN: {{number_strings}}
+      - LOWER:
+          IN: {{common_word_endings}}
+        OP: "?"
+      - IS_DIGIT: true
+      - LOWER:
+          IN: {{range_separators}}
+      - IS_DIGIT: true
+NUMBERS:
+  input:
+    type: multi
+    start: 1
+    end: end
+  output:
+    type: single
+    index: number
+    handler: joiner
+    args:
+      separator: ","
+      exclusions: {{common_word_endings}}
+  patterns:
+{%- for i in range(12) %}
+    - - LOWER:
+          IN: {{number_strings}}
+      - TEXT:
+          IN: {{common_word_endings}}
+        OP: "?"
+      - IS_DIGIT: true
+{%- for j in range(i) %}
+      - TEXT: ","
+        OP: "?"
+      - IS_DIGIT: true
+{%- endfor %}
+{%- endfor %}
