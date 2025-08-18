@@ -26,7 +26,6 @@ PATTERNS_PATH = 'patterns.yaml'
 FILE_NAMES_PATH = 'file_names.json'
 RESTORE_PATH = 'restore_data.json'
 
-
 nlp_data = {
     "nlp": None,
     "matcher": None,
@@ -35,6 +34,16 @@ nlp_data = {
 
 
 def get_actual_value(span: Span):
+    """
+    Get value for the span for use during file renaming
+
+    Args:
+        span (Span): span for which value is to be retrieved
+
+    Returns:
+        dict: The calculated value of the field(s) as per the configured pattern
+    """
+
     if span.label_ not in nlp_data["patterns"]:
         return {}
 
@@ -47,7 +56,15 @@ def get_actual_value(span: Span):
 
 @Language.component("rename_pipe")
 def rename_pipe_entity(doc: Doc):
-    """Add entities"""
+    """
+    Add matched entities to the document. This function is used in spacy pipeline.
+
+    Args:
+        doc (Doc): spacy document object
+
+    Returns:
+        Doc: doc object returned for use in pipeline
+    """
 
     matches = nlp_data["matcher"](doc)
 
@@ -61,10 +78,20 @@ def rename_pipe_entity(doc: Doc):
     return doc
 
 
-def load_patterns():
+def load_patterns(file_path: str):
+    """
+    Loads patterns.yaml or equivalent file.
+
+    Args:
+        file_path (str): file path to load patterns from
+
+    Returns:
+        None
+    """
+
     try:
         env = Environment(loader=FileSystemLoader('.'))
-        template = env.get_template('patterns.yaml')
+        template = env.get_template(file_path)
         yaml_string = template.render({})
 
         nlp_data["patterns"] = yaml.safe_load(yaml_string)
@@ -73,10 +100,22 @@ def load_patterns():
         sys.exit(1)
 
 
-def get_matcher(nlp):
+def get_matcher(nlp, file_path: str):
+    """
+    Get matcher for use in spacy pipeline.
+    Matcher is using patterns defined in file_path.
+
+    Args:
+        nlp: Spacy nlp object
+        file_path (str): the file path to load patterns from
+
+    Returns:
+        Matcher: matcher object
+    """
+
     matcher = Matcher(nlp.vocab)
 
-    load_patterns()
+    load_patterns(file_path)
 
     for key, data in nlp_data["patterns"].items():
         matcher.add(key, data["patterns"])
@@ -84,9 +123,19 @@ def get_matcher(nlp):
     return matcher
 
 
-def nlp_init():
+def nlp_init(file_path: str):
+    """
+    Initializes nlp_data global object
+
+    Args:
+        file_path (str): file path to load patterns from
+
+    Returns:
+        None
+    """
+
     nlp_data["nlp"] = nlp = spacy.blank("en")
-    nlp_data["matcher"] = get_matcher(nlp)
+    nlp_data["matcher"] = get_matcher(nlp, file_path)
     nlp.add_pipe("rename_pipe", last=True)
 
     Span.set_extension("actual_value", getter=get_actual_value)
@@ -94,6 +143,19 @@ def nlp_init():
 
 
 def get_input_value(span: Span, input_rules):
+    """
+    Get value from given span using specified input rules.
+
+    Args:
+        span (Span): Spacy Span object
+        input_rules (dict): A dict object containing input rules.
+                            Expected keys are:
+                            - "type" (one of "single", "all", "distinct" or "multi") 
+
+    Returns:
+        object
+    """
+
     if "type" not in input_rules:
         print(":: type is mandatory field for input rules")
         sys.exit(1)
@@ -425,7 +487,7 @@ def multi_extract(args):
 
     for dir_name, file_name in file_generator(args.file):
         file_name_new = extract(
-            file_name, args.excludes, args.mandatory, args.pattern)
+            file_name, args.excludes, args.mandatory, args.template)
         result = results.get(dir_name, {})
         result[file_name] = file_name_new
         results[dir_name] = result
@@ -437,12 +499,12 @@ def multi_predict(args):
     """Predict new file names"""
     results = {}
     nlp = spacy.load(args.model)
-    load_patterns()
+    load_patterns(args.load)
     Span.set_extension("actual_value", getter=get_actual_value)
 
     for dir_name, file_name in file_generator(args.file):
         doc = nlp(preprocess_file_name(file_name, None))
-        file_name_new = get_new_file_name(doc, args.mandatory, args.pattern)
+        file_name_new = get_new_file_name(doc, args.mandatory, args.template)
         result = results.get(dir_name, {})
         result[file_name] = file_name_new
         results[dir_name] = result
@@ -453,7 +515,7 @@ def multi_predict(args):
 def generate_training_data(args):
     """Generate training data"""
 
-    nlp_init()
+    nlp_init(args.load)
     docs = []
 
     for _, file_name in file_generator(args.file):
@@ -565,8 +627,8 @@ def add_extract_arguments(cmd, save_path=None):
                          help=f'Save path (default: {save_path})')
     cmd.add_argument('-m', '--mandatory', type=str, nargs='+', default=None,
                      help='Fields that are mandatory in original file name (default: none)')
-    cmd.add_argument('-p', '--pattern', type=str, required=True,
-                     help='Pattern to be used to rename files. Use {pattern_name} for placeholders')
+    cmd.add_argument('-t', '--template', type=str, required=True,
+                     help='template to be used to rename files. Use {attrib_name} for placeholders')
     add_common_extract_arguments(cmd)
 
 
