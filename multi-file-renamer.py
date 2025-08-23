@@ -483,7 +483,7 @@ def multi_extract(args):
     """Extracts new file names"""
 
     results = {}
-    nlp_init()
+    nlp_init(args.load)
 
     for dir_name, file_name in file_generator(args.file):
         file_name_new = extract(
